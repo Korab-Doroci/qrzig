@@ -1,6 +1,30 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const ECL = enum(u2) {
+    L = 0b01,
+    M = 0b00,
+    Q = 0b11,
+    H = 0b10,
+};
+
+const Mode = enum(u4) {
+    numeric = 0b0001,
+    alpha_numeric = 0b0010,
+    byte = 0b0100,
+    kanji = 0b1000,
+};
+
+pub const Code = struct {
+    version: u8,
+    modules: [177][177]bool = .{.{false} ** 177} ** 177,
+    ecl: ECL,
+
+    fn getSize(self: *Code) usize {
+        return (self.version * 4) + 17;
+    }
+};
+
 const num_data_modules_list: [40]u16 = blk: {
     var arr: [40]u16 = undefined;
     for (1..41) |version| {
@@ -22,23 +46,6 @@ fn getSmallestVersion(num_code_words: usize) !u8 {
     }
     return error.textTooBig;
 }
-
-const ECL = enum(u2) {
-    L = 0b01,
-    M = 0b00,
-    Q = 0b11,
-    H = 0b10,
-};
-
-pub const Code = struct {
-    version: u8,
-    modules: [177][177]bool = .{.{false} ** 177} ** 177,
-    ecl: ECL,
-
-    fn getSize(self: *Code) usize {
-        return (self.version * 4) + 17;
-    }
-};
 
 pub fn generateTextCode(text: []const u8) !Code {
     const version = try getSmallestVersion(text.len);
@@ -173,6 +180,37 @@ fn generateFormatInfo(code: *Code) void {
     while (i > 0) {
         i -= 1;
         code.modules[i][8] = (format_info & (@as(u15, 1) << @intCast(i))) != 0;
+    }
+}
+
+fn getEncodingMode(string: []const u8) u4 {
+    _ = string;
+    // Simplified version, assumes byte encoding for now
+    return 0b0100;
+}
+
+fn getEncodingBitCount(version: u8, mode: Mode) u8 {
+    if (version <= 9) {
+        switch (mode) {
+            .numeric => return 10,
+            .alpha_numeric => return 9,
+            .byte => return 8,
+            .kanji => return 8,
+        }
+    } else if (version <= 26) {
+        switch (mode) {
+            .numeric => return 12,
+            .alpha_numeric => return 11,
+            .byte => return 16,
+            .kanji => return 10,
+        }
+    } else {
+        switch (mode) {
+            .numeric => return 14,
+            .alpha_numeric => return 13,
+            .byte => return 16,
+            .kanji => return 12,
+        }
     }
 }
 
