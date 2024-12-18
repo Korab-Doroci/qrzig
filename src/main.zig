@@ -1,72 +1,19 @@
 const std = @import("std");
+const types = @import("types.zig");
+const Code = types.Code;
+const EncodingMode = types.EncodingMode;
+const ErrorCorrectionLevel = types.ErrorCorrectionLevel;
+const DataCodewordCapacityTable = types.DataCodewordCapacityTable;
+const num_data_modules_list = types.num_data_modules_list;
+const log = types.log;
+const exp = types.exp;
 const assert = std.debug.assert;
-
-const ECL = enum(u2) {
-    L = 0b01,
-    M = 0b00,
-    Q = 0b11,
-    H = 0b10,
-};
-
-const Mode = enum(u4) {
-    numeric = 0b0001,
-    alpha_numeric = 0b0010,
-    byte = 0b0100,
-    kanji = 0b1000,
-};
-
-const MAX_DEGREE = 30;
-
-const error_correction_codewords_per_block = [4][40]u8{
-    .{ 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
-    .{ 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28 },
-    .{ 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
-    .{ 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
-};
-
-const num_error_correction_blocks = [4][40]u8{
-    .{ 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25 },
-    .{ 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49 },
-    .{ 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68 },
-    .{ 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81 },
-};
-
-pub const Code = struct {
-    version: u8,
-    modules: [177][177]bool = .{.{false} ** 177} ** 177,
-    ecl: ECL,
-
-    fn getSize(self: *Code) usize {
-        return (self.version * 4) + 17;
-    }
-};
-
-const num_data_modules_list: [40]u16 = blk: {
-    var arr: [40]u16 = undefined;
-    for (1..41) |version| {
-        var result: u16 = (16 * version + 128) * version + 64;
-        if (version >= 2) {
-            const num_align = version / 7 + 2;
-            result -= (25 * num_align - 10) * num_align - 55;
-            if (version >= 7) result -= 36;
-        }
-
-        arr[version - 1] = result;
-    }
-    break :blk arr;
-};
 
 fn getSmallestVersion(num_code_words: usize) !u8 {
     for (num_data_modules_list, 0..) |num_data_modules, version| {
         if (num_data_modules / 8 >= num_code_words) return @intCast(version + 1);
     }
     return error.textTooBig;
-}
-
-pub fn generateTextCode(text: []const u8) !Code {
-    const version = try getSmallestVersion(text.len);
-
-    return Code{ .version = version, .ecl = .M };
 }
 
 fn generateFinderPattern(code: *Code, x: usize, y: usize) void {
@@ -156,7 +103,7 @@ fn generateDarkBit(code: *Code) void {
     code.modules[4 * code.version + 9][8] = true;
 }
 
-fn getFormatInfo(ec_level: ECL, mask_pattern: u3) u15 {
+fn getFormatInfo(ec_level: ErrorCorrectionLevel, mask_pattern: u3) u15 {
     const format_data: u15 = (@as(u15, @intFromEnum(ec_level)) << 3) | mask_pattern;
 
     const generator: u11 = 0b10100110111;
@@ -199,14 +146,13 @@ fn generateFormatInfo(code: *Code) void {
     }
 }
 
-fn getEncodingModeIndicator(string: []const u8) u4 {
-    _ = string;
+fn getEncodingModeIndicator() u4 {
     // FIX ADD ALL ENCODING TYPES
     // Simplified version, assumes byte encoding for now
-    return @intFromEnum(Mode.byte);
+    return @intFromEnum(EncodingMode.byte);
 }
 
-fn getEncodingBitCount(version: u8, mode: Mode) u8 {
+fn getEncodingBitCount(version: u8, mode: EncodingMode) u8 {
     if (version <= 9) {
         switch (mode) {
             .numeric => return 10,
@@ -231,77 +177,112 @@ fn getEncodingBitCount(version: u8, mode: Mode) u8 {
     }
 }
 
-fn intToBuffer(comptime int: anytype) [@typeInfo(@TypeOf(int)).Int.bits]u1 {
-    const bit_count = @typeInfo(@TypeOf(int)).Int.bits;
-    var buffer: [bit_count]u1 = undefined;
-    inline for (0..bit_count) |i| buffer[i] = @as(u1, @intCast((int >> bit_count - (i + 1)) & 1));
-
-    return buffer;
-}
-
-fn groupBitsToBytes(input: []u1, comptime input_len: usize) [input_len]u8 {
-    var result: [input_len]u8 = undefined;
-
-    var i: usize = 0;
-    while (i < input_len) {
-        var byte: u8 = 0;
-        var j: usize = 0;
-        while (j < 8) {
-            byte = (byte << 1) | input[i * 8 + j];
-            j += 1;
+fn lookupDataCodewordCapacity(version: u8, encoding: EncodingMode, error_correction: ErrorCorrectionLevel) u16 {
+    const offset = blk: {
+        var error_offset: usize = 0;
+        var encoding_offset: usize = 0;
+        switch (error_correction) {
+            .L => error_offset = 0,
+            .M => error_offset = 4,
+            .Q => error_offset = 8,
+            .H => error_offset = 12,
         }
-        result[i] = byte;
-        i += 1;
-    }
-
-    return result;
+        switch (encoding) {
+            .numeric => encoding_offset = 0,
+            .alphanumeric => encoding_offset = 1,
+            .byte => encoding_offset = 2,
+            .kanji => encoding_offset = 3,
+        }
+        break :blk error_offset + encoding_offset;
+    };
+    return DataCodewordCapacityTable[version - 1][offset].capacity;
 }
 
-fn getEncodedData(comptime string: []const u8) ![]u8 {
-    const encoding_mode_indicator = @intFromEnum(Mode.byte);
+fn getEncodedData(comptime string: []const u8, comptime version: u8, comptime encoding: EncodingMode, comptime error_correction: ErrorCorrectionLevel) ![]u8 {
+    const encoding_mode_indicator: u4 = @intFromEnum(EncodingMode.byte);
     // FIX SUPPORT OTHER ENCODINGS AND VERSIONS THAN VERSION 1 - 9 FOR BYTE
-    const encoding_bit_count = 8;
-    const mode_indicator_bit_length = 4;
+    const encoding_bit_count = getEncodingBitCount(version, encoding);
+    const mode_indicator_bit_length = getEncodingModeIndicator();
 
-    var data_buffer: [string.len * 8 + mode_indicator_bit_length + encoding_bit_count]u1 = undefined;
+    // String plus encoding header
+    const data_length = string.len + (mode_indicator_bit_length + encoding_bit_count + 7) / 8;
+
+    const code_word_capacity = comptime lookupDataCodewordCapacity(version, encoding, error_correction) + (encoding_bit_count + mode_indicator_bit_length + 7) / 8;
+
+    const bits_left = (code_word_capacity - data_length) * 8;
+
+    // FIX: plus because encoding_bit_count and mode_indicator_bit_length need to fit along side the data, plus seven to round up
+    var data_buffer: [code_word_capacity]u8 = .{0} ** (code_word_capacity);
+
     // idea for faster or more idiomatic way to write bits to buffer
-    // const buffer_stream = std.io.fixedBufferStream(&data_buffer);
-    // const bit_writer = std.io.bitWriter(.big, buffer_stream);
-    @memcpy(data_buffer[0..4], &intToBuffer(encoding_mode_indicator));
-    @memcpy(data_buffer[4 .. 4 + encoding_bit_count], &intToBuffer(@as(u8, @intCast(string.len * 8))));
-    inline for (string, 0..) |char, i| {
-        inline for (0..8) |bit| {
-            data_buffer[4 + 8 + i * 8 + bit] = @as(u1, @intCast((char >> (7 - bit)) & 1));
+    var buffer_stream = std.io.fixedBufferStream(&data_buffer);
+    var bit_writer = std.io.bitWriter(.big, buffer_stream.writer());
+
+    try bit_writer.writeBits(encoding_mode_indicator, 4);
+    try bit_writer.writeBits(string.len, 8);
+
+    const written_string = try bit_writer.write(string);
+    if (written_string != string.len) return error.CantWriteString;
+
+    // Terminator bits
+    // FIX SO THAT I GUARANTEE NO BUFFER OVERFLOW
+    if (bits_left > 0) try bit_writer.writeBits(@as(u4, 0), @min(bits_left, 4));
+
+    // Align to byte
+    if (bit_writer.bit_count != 0) try bit_writer.writeBits(@as(u8, 0), bit_writer.bit_count);
+
+    // Padding codewords
+    for (0..code_word_capacity - data_length, 0..) |_, i| {
+        if (i % 2 != 0) {
+            try bit_writer.writeBits(@as(u8, 0b11101100), 8);
+        } else {
+            try bit_writer.writeBits(@as(u8, 0b00010001), 8);
         }
     }
 
-    var encoded_data = groupBitsToBytes(&data_buffer, data_buffer.len / 8);
+    std.debug.print("module capacity: {d}\n", .{lookupDataCodewordCapacity(1, .byte, .M)});
+    std.debug.print("data: {b}\n", .{data_buffer});
 
-    return &encoded_data;
+    return &data_buffer;
 }
 
-fn addPadding(code: *Code, encoded_data: []u8) []u8 {
-    if (encoded_data.len + 6 >= num_data_modules_list[code.version - 1]) return encoded_data;
+fn mulGF256(a: u8, b: u8) u8 {
+    if (a == 0 or b == 0) return 0;
+    return exp[(log[a] + log[b]) % 255];
+}
 
-    var padded_data: [num_data_modules_list[code.version]]u8 = undefined;
+fn addGF256(a: u8, b: u8) u8 {
+    return a ^ b;
+}
 
-    for (encoded_data.len..padded_data.len) |i| {
-        if (i % 2 == 0) padded_data[i] = 0b11101100 else 0b0010001;
+fn generateErrorCorrectionCodewords(comptime data: []const u8, comptime degree: usize) [degree]u8 {
+    var generator: [degree]u8 = undefined;
+    generator[0] = 1;
+    inline for (1..degree) |i| generator[i] = 0;
+
+    var ecCodewords: [degree]u8 = [_]u8{0} ** degree;
+
+    inline for (data) |byte| {
+        const factor = byte ^ ecCodewords[0];
+        comptime var i = 0;
+        inline while (i < degree - 1) : (i += 1) {
+            ecCodewords[i] = ecCodewords[i + 1] ^ mulGF256(factor, generator[i]);
+        }
+        ecCodewords[degree - 1] = mulGF256(factor, generator[degree - 1]);
     }
 
-    return encoded_data;
+    return ecCodewords;
 }
 
 pub fn main() !void {
     const string = "Hello, world!";
-    var code = try generateTextCode(string);
+    var code = Code{ .ecl = .M, .version = 1 };
     generateTimingPattern(&code);
     generateAllFinderPatterns(&code);
     generateAllAlignmentPatterns(&code);
     generateDarkBit(&code);
     generateFormatInfo(&code);
-    const encoded_data = try getEncodedData(string);
+    const encoded_data = try getEncodedData(string, 1, EncodingMode.byte, .M);
     _ = encoded_data;
-    //addPadding(&code, encoded_data);
     printCode(&code);
 }
