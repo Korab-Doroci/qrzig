@@ -15,7 +15,7 @@ const Mode = enum(u4) {
     kanji = 0b1000,
 };
 
-const REED_SOLOMON_DEGREE_MAX = 30;
+const MAX_DEGREE = 30;
 
 const error_correction_codewords_per_block = [4][40]u8{
     .{ 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30 },
@@ -264,6 +264,9 @@ fn getEncodedData(comptime string: []const u8) ![]u8 {
     const mode_indicator_bit_length = 4;
 
     var data_buffer: [string.len * 8 + mode_indicator_bit_length + encoding_bit_count]u1 = undefined;
+    // idea for faster or more idiomatic way to write bits to buffer
+    // const buffer_stream = std.io.fixedBufferStream(&data_buffer);
+    // const bit_writer = std.io.bitWriter(.big, buffer_stream);
     @memcpy(data_buffer[0..4], &intToBuffer(encoding_mode_indicator));
     @memcpy(data_buffer[4 .. 4 + encoding_bit_count], &intToBuffer(@as(u8, @intCast(string.len * 8))));
     inline for (string, 0..) |char, i| {
@@ -277,9 +280,16 @@ fn getEncodedData(comptime string: []const u8) ![]u8 {
     return &encoded_data;
 }
 
-fn addPadding(code: *Code, encoded_data: []u8) void {
-    _ = code;
-    _ = encoded_data;
+fn addPadding(code: *Code, encoded_data: []u8) []u8 {
+    if (encoded_data.len + 6 >= num_data_modules_list[code.version - 1]) return encoded_data;
+
+    var padded_data: [num_data_modules_list[code.version]]u8 = undefined;
+
+    for (encoded_data.len..padded_data.len) |i| {
+        if (i % 2 == 0) padded_data[i] = 0b11101100 else 0b0010001;
+    }
+
+    return encoded_data;
 }
 
 pub fn main() !void {
@@ -291,6 +301,7 @@ pub fn main() !void {
     generateDarkBit(&code);
     generateFormatInfo(&code);
     const encoded_data = try getEncodedData(string);
-    addPadding(&code, encoded_data);
+    _ = encoded_data;
+    //addPadding(&code, encoded_data);
     printCode(&code);
 }
