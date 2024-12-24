@@ -1,12 +1,27 @@
 const std = @import("std");
 const types = @import("types.zig");
+
+// Code
 const Code = types.Code;
 const EncodingMode = types.EncodingMode;
 const ErrorCorrectionLevel = types.ErrorCorrectionLevel;
 const DataCodewordCapacityTable = types.DataCodewordCapacityTable;
+
+// Error correction
+const mulGF256 = types.mulGF256;
+const addGF256 = types.addGF256;
+const getDivisor = types.getDivisor;
+const polyMulGF256 = types.polyMulGF256;
+const polyDivGF256 = types.polyDivGF256;
+const getGeneratorPolynomial = types.getGeneratorPolynomial;
+const coefficient_table = types.coefficient_table;
 const num_data_modules_list = types.num_data_modules_list;
 const log = types.log;
 const exp = types.exp;
+const MAX_DEGREE = types.MAX_DEGREE;
+const num_error_correction_blocks = types.num_error_correction_blocks;
+
+// Debugging
 const assert = std.debug.assert;
 
 fn getSmallestVersion(num_code_words: usize) !u8 {
@@ -146,31 +161,31 @@ fn generateFormatInfo(code: *Code) void {
     }
 }
 
-fn getEncodingModeIndicator() u4 {
+fn getEncodingModeIndicator() comptime_int {
     // FIX ADD ALL ENCODING TYPES
     // Simplified version, assumes byte encoding for now
     return @intFromEnum(EncodingMode.byte);
 }
 
-fn getEncodingBitCount(version: u8, mode: EncodingMode) u8 {
+fn getEncodingBitCount(version: u8, mode: EncodingMode) comptime_int {
     if (version <= 9) {
         switch (mode) {
             .numeric => return 10,
-            .alpha_numeric => return 9,
+            .alphanumeric => return 9,
             .byte => return 8,
             .kanji => return 8,
         }
     } else if (version <= 26) {
         switch (mode) {
             .numeric => return 12,
-            .alpha_numeric => return 11,
+            .alphanumeric => return 11,
             .byte => return 16,
             .kanji => return 10,
         }
     } else {
         switch (mode) {
             .numeric => return 14,
-            .alpha_numeric => return 13,
+            .alphanumeric => return 13,
             .byte => return 16,
             .kanji => return 12,
         }
@@ -198,7 +213,7 @@ fn lookupDataCodewordCapacity(version: u8, encoding: EncodingMode, error_correct
     return DataCodewordCapacityTable[version - 1][offset].capacity;
 }
 
-fn getEncodedData(comptime string: []const u8, comptime version: u8, comptime encoding: EncodingMode, comptime error_correction: ErrorCorrectionLevel) ![]u8 {
+fn getEncodedData(comptime string: []const u8, comptime version: u8, comptime encoding: EncodingMode, comptime error_correction: ErrorCorrectionLevel) ![lookupDataCodewordCapacity(version, encoding, error_correction) + (getEncodingBitCount(version, encoding) + getEncodingModeIndicator() + 7) / 8]u8 {
     const encoding_mode_indicator: u4 = @intFromEnum(EncodingMode.byte);
     // FIX SUPPORT OTHER ENCODINGS AND VERSIONS THAN VERSION 1 - 9 FOR BYTE
     const encoding_bit_count = getEncodingBitCount(version, encoding);
@@ -233,56 +248,71 @@ fn getEncodedData(comptime string: []const u8, comptime version: u8, comptime en
 
     // Padding codewords
     for (0..code_word_capacity - data_length, 0..) |_, i| {
-        if (i % 2 != 0) {
+        if (i % 2 == 0) {
             try bit_writer.writeBits(@as(u8, 0b11101100), 8);
         } else {
             try bit_writer.writeBits(@as(u8, 0b00010001), 8);
         }
     }
 
-    std.debug.print("module capacity: {d}\n", .{lookupDataCodewordCapacity(1, .byte, .M)});
-    std.debug.print("data: {b}\n", .{data_buffer});
-
-    return &data_buffer;
+    return data_buffer;
 }
 
-fn mulGF256(a: u8, b: u8) u8 {
-    if (a == 0 or b == 0) return 0;
-    return exp[(log[a] + log[b]) % 255];
-}
-
-fn addGF256(a: u8, b: u8) u8 {
-    return a ^ b;
-}
-
-fn generateErrorCorrectionCodewords(comptime data: []const u8, comptime degree: usize) [degree]u8 {
-    var generator: [degree]u8 = undefined;
-    generator[0] = 1;
-    inline for (1..degree) |i| generator[i] = 0;
-
-    var ecCodewords: [degree]u8 = [_]u8{0} ** degree;
-
-    inline for (data) |byte| {
-        const factor = byte ^ ecCodewords[0];
-        comptime var i = 0;
-        inline while (i < degree - 1) : (i += 1) {
-            ecCodewords[i] = ecCodewords[i + 1] ^ mulGF256(factor, generator[i]);
-        }
-        ecCodewords[degree - 1] = mulGF256(factor, generator[degree - 1]);
+fn computeRemainder(data: []const u8, generator: []const u8, degree: u8) [MAX_DEGREE]u8 {
+    var result: [MAX_DEGREE]u8 = .{0} ** MAX_DEGREE;
+    for (0..data.len) |i| {
+        const factor: u8 = data[i] ^ result[0];
+        std.mem.copyBackwards(u8, result[0 .. degree - 1], result[1..degree]);
+        result[degree - 1] = 0;
+        for (0..degree) |j| result[j] ^= mulGF256(generator[j], factor);
     }
+    return result;
+}
 
-    return ecCodewords;
+// FIX ADD SUPPORT FOR HIGHER VERSIONS WITH MULTIPLE ERROR CORRECTION BLOCKS
+fn generateErrorCodewords(messagePolynomial: []const u8, generatorPolynomial: []const u8) ![26]u8 {
+    const GFConvert = struct {
+        fn itoa(x: u8) ?u8 {
+            for (exp, 0..) |exp_val, index| if (exp_val == x) return @intCast(index);
+            return null;
+        }
+
+        fn atoi(x: ?u8) u8 {
+            return if (x) |val| exp[val] else 0;
+        }
+    };
+
+    var mp = try std.BoundedArray(?u8, 255).init(0);
+
+    for (messagePolynomial) |x| try mp.append(GFConvert.itoa(x));
+    try mp.appendNTimes(null, 26);
+
+    for (0..messagePolynomial.len) |i| {
+        const lead = mp.get(i);
+        for (generatorPolynomial, 0..) |x, j| {
+            var y = GFConvert.atoi(@as(u8, @intCast((@as(usize, @intCast(x)) + @as(usize, @intCast(lead orelse 0))) % 255)));
+            if (mp.get(i + j) != null) y ^= GFConvert.atoi(mp.get(i + j));
+            mp.set(i + j, if (y == 0) null else GFConvert.itoa(y));
+        }
+    }
+    std.debug.print("\n", .{});
+
+    var result: [26]u8 = undefined;
+    for (mp.slice()[messagePolynomial.len..], 0..) |x, i| result[i] = if (x == null) 0 else GFConvert.atoi(x);
+
+    return result;
 }
 
 pub fn main() !void {
-    const string = "Hello, world!";
-    var code = Code{ .ecl = .M, .version = 1 };
+    const string = "Hello, world!Hello, world!Hello, world!";
+    var code = Code{ .ecl = .M, .version = 3 };
     generateTimingPattern(&code);
     generateAllFinderPatterns(&code);
     generateAllAlignmentPatterns(&code);
     generateDarkBit(&code);
     generateFormatInfo(&code);
-    const encoded_data = try getEncodedData(string, 1, EncodingMode.byte, .M);
-    _ = encoded_data;
+    const encoded_data = try getEncodedData(string, 3, EncodingMode.byte, .M);
+    const error_correction_codewords = try generateErrorCodewords(&encoded_data, &getGeneratorPolynomial(26));
+    std.debug.print("error codewords: {any}\n", .{error_correction_codewords});
     printCode(&code);
 }
