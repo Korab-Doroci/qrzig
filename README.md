@@ -1,5 +1,5 @@
-# ZigQR
-ZigQR is a lightweight, efficient QR code generator written in the Zig programming language. It supports generating QR codes with customizable encoding modes, error correction levels, and versions, adhering to the QR code specification. This project is designed for developers who want a fast, native QR code generation tool with minimal dependencies.
+# QrZig
+QrZig is a lightweight, efficient QR code generator written in the Zig programming language. It supports generating QR codes with customizable encoding modes, error correction levels, and versions, adhering to the QR code specification. This project is designed for developers who want a fast, native QR code generation tool with minimal dependencies.
 
 ## Features
 - **QR Code Generation**: Create QR codes from text input with support for various encoding modes (currently focused on byte encoding).
@@ -15,12 +15,12 @@ ZigQR is a lightweight, efficient QR code generator written in the Zig programmi
 - **Debugging Tools**: Includes a simple console-based QR code printer for visualization.
 
 ## Installation
-ZigQR requires the Zig compiler (version 0.13.0 or later recommended). To build and run the project:
+QrZig requires the Zig compiler (version 0.13.0 or later recommended). To build and run the project:
 1. Clone the repository:
 bash
 `
-git clone https://github.com/yourusername/zigqr.git
-cd zigqr
+git clone https://github.com/korab-doroci/qrzig.git
+cd qrzig
 `
 
 2. Build the project:

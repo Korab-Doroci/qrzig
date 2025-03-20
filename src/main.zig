@@ -122,7 +122,7 @@ fn generateDarkBit(code: *Code) void {
 
 fn getFormatInfo(code: *Code) u15 {
     // FIX SUPPORT ALL MASKS
-    const mask_pattern: u3 = 0b1; // You might want to make this dynamic based on your mask selection
+    const mask_pattern: u3 = 0b1; // FIX Generate mask pattern based on version
     return types.format_strings[@as(usize, code.ecl.getOffset()) * 8 + @as(usize, mask_pattern)].bits;
 }
 
@@ -171,7 +171,7 @@ fn generateFormatInfo(code: *Code) void {
 
 fn applyFormatAndVersionInfo(code: *Code) void {
     const size = code.getSize();
-    const mask: u3 = 0b1; // You might want to make this dynamic based on your mask selection
+    const mask: u3 = 0b1; // FIX Generate mask pattern based on version
     const format_info = getFormatInfo(code.ecl, mask);
 
     for (0..15) |i| {
@@ -244,23 +244,7 @@ fn getEncodingBitCount(version: u8, mode: EncodingMode) comptime_int {
 }
 
 fn lookupDataCodewordCapacity(version: u8, encoding: EncodingMode, error_correction: ErrorCorrectionLevel) u16 {
-    const offset = blk: {
-        var error_offset: usize = 0;
-        var encoding_offset: usize = 0;
-        switch (error_correction) {
-            .L => error_offset = 0,
-            .M => error_offset = 4,
-            .Q => error_offset = 8,
-            .H => error_offset = 12,
-        }
-        switch (encoding) {
-            .numeric => encoding_offset = 0,
-            .alphanumeric => encoding_offset = 1,
-            .byte => encoding_offset = 2,
-            .kanji => encoding_offset = 3,
-        }
-        break :blk error_offset + encoding_offset;
-    };
+    const offset = @as(u16, error_correction.getOffset()) * 4 + encoding.getOffset();
     return DataCodewordCapacityTable[version - 1][offset].capacity;
 }
 
@@ -500,36 +484,24 @@ fn isReservedModule(code: *Code, x: usize, y: usize) bool {
     const version = code.version;
 
     // Validate coordinates are within the QR code
-    if (x >= size or y >= size) {
-        return false;
-    }
+    if (x >= size or y >= size) return false;
 
     // Check finder patterns (top-left, top-right, bottom-left) and their separators
     // Top-left finder pattern (and separator)
-    if (x < 9 and y < 9) {
-        return true;
-    }
+    if (x < 9 and y < 9) return true;
 
     // Top-right finder pattern (and separator)
-    if (x >= size - 8 and y < 9) {
-        return true;
-    }
+    if (x >= size - 8 and y < 9) return true;
 
     // Bottom-left finder pattern (and separator)
-    if (x < 9 and y >= size - 8) {
-        return true;
-    }
+    if (x < 9 and y >= size - 8) return true;
 
     // Timing patterns
     // Horizontal timing pattern
-    if (y == 6) {
-        return true;
-    }
+    if (y == 6) return true;
 
     // Vertical timing pattern
-    if (x == 6) {
-        return true;
-    }
+    if (x == 6) return true;
 
     // Alignment patterns (for version 2 and higher)
     if (version >= 2) {
@@ -582,9 +554,7 @@ fn isReservedModule(code: *Code, x: usize, y: usize) bool {
     }
 
     // Dark module (always at this specific location)
-    if (x == 8 and y == size - 8) {
-        return true;
-    }
+    if (x == 8 and y == size - 8) return true;
 
     return false;
 }
