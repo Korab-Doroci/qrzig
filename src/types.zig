@@ -7,7 +7,7 @@ pub const ErrorCorrectionLevel = enum(u2) {
     Q = 0b11,
     H = 0b10,
 
-    pub fn getOffset(self: *ErrorCorrectionLevel) u2 {
+    pub fn getOffset(self: ErrorCorrectionLevel) u2 {
         switch (self) {
             .L => return 0,
             .M => return 1,
@@ -22,12 +22,100 @@ pub const EncodingMode = enum(u4) {
     alphanumeric = 0b0010,
     byte = 0b0100,
     kanji = 0b1000,
+
+    pub fn getOffset(self: EncodingMode) u2 {
+        switch (self) {
+            .numeric => return 0,
+            .alphanumeric => return 1,
+            .byte => return 2,
+            .kanji => return 3,
+        }
+    }
 };
 
 pub const VersionCapacityEntry = struct {
     error_correction: ErrorCorrectionLevel,
     encoding: EncodingMode,
     capacity: u16,
+};
+
+// Version 7 and up
+pub const version_info_strings = [34]u18{
+    0b00111110010010100,
+    0b01000010110111100,
+    0b01001101010011001,
+    0b001010010011010011,
+    0b001011101111110110,
+    0b001100011101100010,
+    0b001101100001000111,
+    0b001110011000001101,
+    0b001111100100101000,
+    0b010000101101111000,
+    0b010001010001011101,
+    0b010010101000010111,
+    0b010011010100110010,
+    0b010100100110100110,
+    0b010101011010000011,
+    0b010110100011001001,
+    0b010111011111101100,
+    0b011000111011000100,
+    0b011001000111100001,
+    0b011010111110101011,
+    0b011011000010001110,
+    0b011100110000011010,
+    0b011101001100111111,
+    0b011110110101110101,
+    0b011111001001010000,
+    0b100000100111010101,
+    0b100001011011110000,
+    0b100010100010111010,
+    0b100011011110011111,
+    0b100100101100001011,
+    0b100101010000101110,
+    0b100110101001100100,
+    0b100111010101000001,
+    0b101000110001101001,
+};
+
+pub const Format_string = struct {
+    error_correction: ErrorCorrectionLevel,
+    pattern: u3,
+    bits: u15,
+};
+
+pub const format_strings = [_]Format_string{
+    .{ .error_correction = .L, .pattern = 0, .bits = 0b111011111000100 },
+    .{ .error_correction = .L, .pattern = 1, .bits = 0b111001011110011 },
+    .{ .error_correction = .L, .pattern = 2, .bits = 0b111110110101010 },
+    .{ .error_correction = .L, .pattern = 3, .bits = 0b111100010011101 },
+    .{ .error_correction = .L, .pattern = 4, .bits = 0b110011000101111 },
+    .{ .error_correction = .L, .pattern = 5, .bits = 0b110001100011000 },
+    .{ .error_correction = .L, .pattern = 6, .bits = 0b110110001000001 },
+    .{ .error_correction = .L, .pattern = 7, .bits = 0b110100101110110 },
+    .{ .error_correction = .M, .pattern = 0, .bits = 0b101010000010010 },
+    .{ .error_correction = .M, .pattern = 1, .bits = 0b101000100100101 },
+    .{ .error_correction = .M, .pattern = 2, .bits = 0b101111001111100 },
+    .{ .error_correction = .M, .pattern = 3, .bits = 0b101101101001011 },
+    .{ .error_correction = .M, .pattern = 4, .bits = 0b100010111111001 },
+    .{ .error_correction = .M, .pattern = 5, .bits = 0b100000011001110 },
+    .{ .error_correction = .M, .pattern = 6, .bits = 0b100111110010111 },
+    .{ .error_correction = .M, .pattern = 7, .bits = 0b100101010100000 },
+    .{ .error_correction = .Q, .pattern = 0, .bits = 0b011010101011111 },
+    .{ .error_correction = .Q, .pattern = 1, .bits = 0b011000001101000 },
+    .{ .error_correction = .Q, .pattern = 2, .bits = 0b011111100110001 },
+    .{ .error_correction = .Q, .pattern = 3, .bits = 0b011101000000110 },
+    .{ .error_correction = .Q, .pattern = 4, .bits = 0b010010010110100 },
+    .{ .error_correction = .Q, .pattern = 5, .bits = 0b010000110000011 },
+    .{ .error_correction = .Q, .pattern = 6, .bits = 0b010111011011010 },
+    .{ .error_correction = .Q, .pattern = 7, .bits = 0b010101111101101 },
+    .{ .error_correction = .H, .pattern = 0, .bits = 0b001011010001001 },
+    .{ .error_correction = .H, .pattern = 1, .bits = 0b001001110111110 },
+    .{ .error_correction = .H, .pattern = 2, .bits = 0b001110011100111 },
+    .{ .error_correction = .H, .pattern = 3, .bits = 0b001100111010000 },
+    .{ .error_correction = .H, .pattern = 4, .bits = 0b000011101100010 },
+    .{ .error_correction = .H, .pattern = 5, .bits = 0b000001001010101 },
+    .{ .error_correction = .H, .pattern = 6, .bits = 0b000110100001100 },
+    .{ .error_correction = .H, .pattern = 7, .bits = 0b000100000111011 },
 };
 
 pub const DataCodewordCapacityTable = [40][16]VersionCapacityEntry{
@@ -806,6 +894,7 @@ pub fn getGeneratorPolynomial(codewords: comptime_int) [codewords + 1]u8 {
                 const x = exp[prod[j + 1]];
                 const y = exp[@intCast((@as(usize, prod[j]) + i) % 255)];
                 prod[j] = blk: {
+                    @setEvalBranchQuota(100000);
                     for (exp, 0..) |exp_val, index| if (exp_val == x ^ y) break :blk @intCast(index);
                     break :blk 0;
                 };
